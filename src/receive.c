@@ -17,6 +17,10 @@
 #include <linux/udp.h>
 #include <net/ip_tunnels.h>
 
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+#include <../ndm/hw_nat/ra_nat.h>
+#endif
+
 /* Must be called with bh disabled. */
 static void update_rx_stats(struct wg_peer *peer, size_t len)
 {
@@ -110,8 +114,8 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 	bool under_load;
 
 	if (SKB_TYPE_LE32(skb) == cpu_to_le32(MESSAGE_HANDSHAKE_COOKIE)) {
-		net_dbg_skb_ratelimited("%s: Receiving cookie response from %pISpfsc\n",
-					wg->dev->name, skb);
+		net_info_skb_ratelimited("%s: receiving cookie response from %pISpfsc\n",
+					wg->ndm_dev_name, skb);
 		wg_cookie_message_consume(
 			(struct message_handshake_cookie *)skb->data, wg);
 		return;
@@ -134,13 +138,14 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 	} else if (under_load && mac_state == VALID_MAC_BUT_NO_COOKIE) {
 		packet_needs_cookie = true;
 	} else {
-		net_dbg_skb_ratelimited("%s: Invalid MAC of handshake, dropping packet from %pISpfsc\n",
-					wg->dev->name, skb);
+		net_info_skb_ratelimited("%s: invalid MAC of handshake, dropping packet from %pISpfsc\n",
+					wg->ndm_dev_name, skb);
 		return;
 	}
 
 	switch (SKB_TYPE_LE32(skb)) {
 	case cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION): {
+		struct timespec64 ts, last_handshake_ts;
 		struct message_handshake_initiation *message =
 			(struct message_handshake_initiation *)skb->data;
 
@@ -151,14 +156,21 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		}
 		peer = wg_noise_handshake_consume_initiation(message, wg);
 		if (unlikely(!peer)) {
-			net_dbg_skb_ratelimited("%s: Invalid handshake initiation from %pISpfsc\n",
-						wg->dev->name, skb);
+			net_info_skb_ratelimited("%s: invalid handshake initiation from %pISpfsc\n",
+						wg->ndm_dev_name, skb);
 			return;
 		}
 		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_dbg_ratelimited("%s: Receiving handshake initiation from peer %llu (%pISpfsc)\n",
-				    wg->dev->name, peer->internal_id,
-				    &peer->endpoint.addr);
+
+		last_handshake_ts = peer->walltime_last_handshake;
+		timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+		ktime_get_real_ts64(&ts);
+
+		if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+			net_info_peer_ratelimited("%s: receiving handshake initiation from peer \"%s\" (%llu) (%pISpfsc)\n",
+						peer, peer->internal_id,
+						&peer->endpoint.addr);
+
 		wg_packet_send_handshake_response(peer);
 		break;
 	}
@@ -173,14 +185,16 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		}
 		peer = wg_noise_handshake_consume_response(message, wg);
 		if (unlikely(!peer)) {
-			net_dbg_skb_ratelimited("%s: Invalid handshake response from %pISpfsc\n",
-						wg->dev->name, skb);
+			net_info_skb_ratelimited("%s: invalid handshake response from %pISpfsc\n",
+						wg->ndm_dev_name, skb);
 			return;
 		}
 		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_dbg_ratelimited("%s: Receiving handshake response from peer %llu (%pISpfsc)\n",
-				    wg->dev->name, peer->internal_id,
+		if (wg->debug) {
+			net_info_peer_ratelimited("%s: receiving handshake response from peer \"%s\" (%llu) (%pISpfsc)\n",
+				    peer, peer->internal_id,
 				    &peer->endpoint.addr);
+		}
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
 			wg_timers_session_derived(peer);
@@ -365,9 +379,11 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	/* A packet with length 0 is a keepalive packet */
 	if (unlikely(!skb->len)) {
 		update_rx_stats(peer, message_data_len(0));
-		net_dbg_ratelimited("%s: Receiving keepalive packet from peer %llu (%pISpfsc)\n",
-				    dev->name, peer->internal_id,
-				    &peer->endpoint.addr);
+		if (peer->device->debug) {
+			net_info_peer_ratelimited("%s: receiving keepalive packet from peer \"%s\" (%llu) (%pISpfsc)\n",
+						peer, peer->internal_id,
+						&peer->endpoint.addr);
+		}
 		goto packet_processed;
 	}
 
@@ -419,26 +435,44 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	if (unlikely(routed_peer != peer))
 		goto dishonest_packet_peer;
 
-	napi_gro_receive(&peer->napi, skb);
-	update_rx_stats(peer, message_data_len(len_before_trim));
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+	FOE_ALG_SKIP(skb);
+#endif
+
+	if (unlikely(napi_gro_receive(&peer->napi, skb) == GRO_DROP)) {
+		++dev->stats.rx_dropped;
+		if (peer->device->debug) {
+			net_info_peer_ratelimited("%s: failed to receive packet from peer \"%s\" (%llu) (%pISpfsc) (possibly dropped by netfilter)\n",
+						peer, peer->internal_id,
+						&peer->endpoint.addr);
+		}
+	} else
+		update_rx_stats(peer, message_data_len(len_before_trim));
+
 	return;
 
 dishonest_packet_peer:
-	net_dbg_skb_ratelimited("%s: Packet has unallowed src IP (%pISc) from peer %llu (%pISpfsc)\n",
-				dev->name, skb, peer->internal_id,
-				&peer->endpoint.addr);
+	if (peer->device->debug) {
+		net_info_skb_ratelimited("%s: packet has unallowed src IP (%pISc) from peer %llu (%pISpfsc)\n",
+					peer->device->ndm_dev_name, skb, peer->internal_id,
+					&peer->endpoint.addr);
+	}
 	++dev->stats.rx_errors;
 	++dev->stats.rx_frame_errors;
 	goto packet_processed;
 dishonest_packet_type:
-	net_dbg_ratelimited("%s: Packet is neither ipv4 nor ipv6 from peer %llu (%pISpfsc)\n",
-			    dev->name, peer->internal_id, &peer->endpoint.addr);
+	if (peer->device->debug) {
+		net_info_peer_ratelimited("%s: packet is neither ipv4 nor ipv6 from peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id, &peer->endpoint.addr);
+	}
 	++dev->stats.rx_errors;
 	++dev->stats.rx_frame_errors;
 	goto packet_processed;
 dishonest_packet_size:
-	net_dbg_ratelimited("%s: Packet has incorrect size from peer %llu (%pISpfsc)\n",
-			    dev->name, peer->internal_id, &peer->endpoint.addr);
+	if (peer->device->debug) {
+		net_info_peer_ratelimited("%s: packet has incorrect size from peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id, &peer->endpoint.addr);
+	}
 	++dev->stats.rx_errors;
 	++dev->stats.rx_length_errors;
 	goto packet_processed;
@@ -473,10 +507,12 @@ int wg_packet_rx_poll(struct napi_struct *napi, int budget)
 
 		if (unlikely(!counter_validate(&keypair->receiving_counter,
 					       PACKET_CB(skb)->nonce))) {
-			net_dbg_ratelimited("%s: Packet has invalid nonce %llu (max %llu)\n",
-					    peer->device->dev->name,
+			if (peer->device->debug) {
+			net_dbg_ratelimited("%s: packet has invalid nonce %llu (max %llu)\n",
+					    peer->device->ndm_dev_name,
 					    PACKET_CB(skb)->nonce,
 					    keypair->receiving_counter.counter);
+			}
 			goto next;
 		}
 
@@ -571,8 +607,8 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		if (skb_queue_len(&wg->incoming_handshakes) >
 			    MAX_QUEUED_INCOMING_HANDSHAKES ||
 		    unlikely(!rng_is_initialized())) {
-			net_dbg_skb_ratelimited("%s: Dropping handshake packet from %pISpfsc\n",
-						wg->dev->name, skb);
+			net_info_skb_ratelimited("%s: dropping handshake packet from %pISpfsc\n",
+						wg->ndm_dev_name, skb);
 			goto err;
 		}
 		skb_queue_tail(&wg->incoming_handshakes, skb);
@@ -590,6 +626,9 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		break;
 	default:
 		WARN(1, "Non-exhaustive parsing of packet header lead to unknown packet type!\n");
+		if (wg->debug)
+			net_info_skb_ratelimited("%s: invalid packet from %pISpfsc\n",
+						wg->ndm_dev_name, skb);
 		goto err;
 	}
 	return;

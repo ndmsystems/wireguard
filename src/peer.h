@@ -80,4 +80,12 @@ void wg_peer_put(struct wg_peer *peer);
 void wg_peer_remove(struct wg_peer *peer);
 void wg_peer_remove_all(struct wg_device *wg);
 
+void wg_b64_encode(char *dst, const char *src, size_t len);
+#define net_info_peer_ratelimited(fmt, peer, ...) do {                                  \
+		char __b64_peer[NOISE_PUBLIC_KEY_LEN * 4 / 3 + 5];                              \
+		wg_b64_encode(__b64_peer, peer->handshake.remote_static, NOISE_PUBLIC_KEY_LEN); \
+		net_info_ratelimited(fmt, peer->device->ndm_dev_name, __b64_peer,               \
+				    ##__VA_ARGS__);                                                     \
+	} while (0)
+
 #endif /* _WG_PEER_H */

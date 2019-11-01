@@ -28,9 +28,14 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		return; /* This function is rate limited. */
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
-	net_dbg_ratelimited("%s: Sending handshake initiation to peer %llu (%pISpfsc)\n",
-			    peer->device->dev->name, peer->internal_id,
-			    &peer->endpoint.addr);
+
+	if ( peer->device->debug &&
+		 peer->endpoint.addr.sa_family == AF_INET &&
+		!ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) {
+		net_info_peer_ratelimited("%s: sending handshake initiation to peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id,
+					&peer->endpoint.addr);
+	}
 
 	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
@@ -86,11 +91,18 @@ out:
 void wg_packet_send_handshake_response(struct wg_peer *peer)
 {
 	struct message_handshake_response packet;
+	struct timespec64 ts, last_handshake_ts;
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
-	net_dbg_ratelimited("%s: Sending handshake response to peer %llu (%pISpfsc)\n",
-			    peer->device->dev->name, peer->internal_id,
-			    &peer->endpoint.addr);
+
+	last_handshake_ts = peer->walltime_last_handshake;
+	timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+	ktime_get_real_ts64(&ts);
+
+	if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+		net_info_peer_ratelimited("%s: sending handshake response to peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id,
+					&peer->endpoint.addr);
 
 	if (wg_noise_handshake_create_response(&packet, &peer->handshake)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
@@ -114,8 +126,8 @@ void wg_packet_send_handshake_cookie(struct wg_device *wg,
 {
 	struct message_handshake_cookie packet;
 
-	net_dbg_skb_ratelimited("%s: Sending cookie response for denied handshake message for %pISpfsc\n",
-				wg->dev->name, initiating_skb);
+	net_info_skb_ratelimited("%s: sending cookie response for denied handshake message for %pISpfsc\n",
+				wg->ndm_dev_name, initiating_skb);
 	wg_cookie_message_create(&packet, initiating_skb, sender_index,
 				 &wg->cookie_checker);
 	wg_socket_send_buffer_as_reply_to_skb(wg, initiating_skb, &packet,
@@ -234,9 +246,11 @@ void wg_packet_send_keepalive(struct wg_peer *peer)
 		skb->dev = peer->device->dev;
 		PACKET_CB(skb)->mtu = skb->dev->mtu;
 		skb_queue_tail(&peer->staged_packet_queue, skb);
-		net_dbg_ratelimited("%s: Sending keepalive packet to peer %llu (%pISpfsc)\n",
-				    peer->device->dev->name, peer->internal_id,
-				    &peer->endpoint.addr);
+		if (peer->device->debug) {
+			net_info_peer_ratelimited("%s: sending keepalive packet to peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id,
+					&peer->endpoint.addr);
+		}
 	}
 
 	wg_packet_send_staged_packets(peer);

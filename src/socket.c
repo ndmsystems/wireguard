@@ -73,8 +73,8 @@ static int send4(struct wg_device *wg, struct sk_buff *skb,
 		}
 		if (unlikely(IS_ERR(rt))) {
 			ret = PTR_ERR(rt);
-			net_dbg_ratelimited("%s: No route to %pISpfsc, error %d\n",
-					    wg->dev->name, &endpoint->addr, ret);
+			net_info_ratelimited("%s: no route to %pISpfsc, error %d\n",
+					    wg->ndm_dev_name, &endpoint->addr, ret);
 			goto err;
 		}
 		if (cache)
@@ -140,8 +140,8 @@ static int send6(struct wg_device *wg, struct sk_buff *skb,
 						      NULL);
 		if (unlikely(IS_ERR(dst))) {
 			ret = PTR_ERR(dst);
-			net_dbg_ratelimited("%s: No route to %pISpfsc, error %d\n",
-					    wg->dev->name, &endpoint->addr, ret);
+			net_dbg_ratelimited("%s: no route to %pISpfsc, error %d\n",
+					    wg->ndm_dev_name, &endpoint->addr, ret);
 			goto err;
 		}
 		if (cache)
@@ -385,7 +385,7 @@ retry:
 
 	ret = udp_sock_create(net, &port4, &new4);
 	if (ret < 0) {
-		pr_err("%s: Could not create IPv4 socket\n", wg->dev->name);
+		pr_err("%s: сould not create IPv4 socket\n", wg->ndm_dev_name);
 		goto out;
 	}
 	set_sock_opts(new4);
@@ -399,8 +399,8 @@ retry:
 			udp_tunnel_sock_release(new4);
 			if (ret == -EADDRINUSE && !port && retries++ < 100)
 				goto retry;
-			pr_err("%s: Could not create IPv6 socket\n",
-			       wg->dev->name);
+			pr_err("%s: сould not create IPv6 socket\n",
+			       wg->ndm_dev_name);
 			goto out;
 		}
 		set_sock_opts(new6);
