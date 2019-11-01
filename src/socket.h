@@ -41,4 +41,11 @@ void wg_socket_clear_peer_endpoint_src(struct wg_peer *peer);
 #define net_dbg_skb_ratelimited(fmt, skb, ...)
 #endif
 
+#define net_info_skb_ratelimited(fmt, dev, skb, ...) do {                       \
+		struct endpoint __endpoint;                                    \
+		wg_socket_endpoint_from_skb(&__endpoint, skb);                 \
+		net_info_ratelimited(fmt, dev, &__endpoint.addr,                \
+				    ##__VA_ARGS__);                            \
+	} while (0)
+
 #endif /* _WG_SOCKET_H */

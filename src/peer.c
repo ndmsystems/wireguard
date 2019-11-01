@@ -68,7 +68,8 @@ struct wg_peer *wg_peer_create(struct wg_device *wg,
 	INIT_LIST_HEAD(&peer->allowedips_list);
 	wg_pubkey_hashtable_add(wg->peer_hashtable, peer);
 	++wg->num_peers;
-	pr_debug("%s: Peer %llu created\n", wg->dev->name, peer->internal_id);
+	net_info_peer_ratelimited("%s: peer \"%s\" (%llu) created\n",
+		 peer, peer->internal_id);
 	return peer;
 
 err_3:
@@ -213,9 +214,8 @@ static void kref_release(struct kref *refcount)
 {
 	struct wg_peer *peer = container_of(refcount, struct wg_peer, refcount);
 
-	pr_debug("%s: Peer %llu (%pISpfsc) destroyed\n",
-		 peer->device->dev->name, peer->internal_id,
-		 &peer->endpoint.addr);
+	net_info_peer_ratelimited("%s: peer \"%s\" (%llu) (%pISpfsc) destroyed\n",
+		  peer, peer->internal_id, &peer->endpoint.addr);
 
 	/* Remove ourself from dynamic runtime lookup structures, now that the
 	 * last reference is gone.
@@ -237,4 +237,46 @@ void wg_peer_put(struct wg_peer *peer)
 	if (unlikely(!peer))
 		return;
 	kref_put(&peer->refcount, kref_release);
+}
+
+static const char *wg_base64alnum =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static int wg_b64_encode_bits(int c)
+{
+	return wg_base64alnum[c];
+}
+
+void wg_b64_encode(char *dst, const char *src, size_t len)
+{
+	size_t ctr = 0;
+
+	while (ctr < len) {
+		unsigned char a, b, c;
+
+		ctr++;
+		a = *src++;
+		*dst++ = wg_b64_encode_bits(a >> 2);
+		if (ctr < len) {
+			ctr++;
+			b = *src++;
+			*dst++ = wg_b64_encode_bits(((a & 3) << 4) | (b >> 4));
+			if (ctr < len) {
+				ctr++;
+				c = *src++;
+				*dst++ = wg_b64_encode_bits(((b & 15) << 2) |
+						     (c >> 6));
+				*dst++ = wg_b64_encode_bits(c & 63);
+			} else {
+				*dst++ = wg_b64_encode_bits((b & 15) << 2);
+				*dst++ = '=';
+			}
+		} else {
+			*dst++ = wg_b64_encode_bits(((a & 3) << 4));
+			*dst++ = '=';
+			*dst++ = '=';
+		}
+	}
+
+	*(dst++) = '\0';
 }

@@ -28,6 +28,12 @@ static const struct nla_policy device_policy[WGDEVICE_A_MAX + 1] = {
 	[WGDEVICE_A_PEERS]		= { .type = NLA_NESTED }
 };
 
+static const struct nla_policy device_policy_debug[WGDEVICE_A_MAX + 1] = {
+	[WGDEVICE_A_IFINDEX]		= { .type = NLA_U32 },
+	[WGDEVICE_A_IFNAME]		= { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },
+	[WGDEVICE_A_FLAGS]		= { .type = NLA_U32 }
+};
+
 static const struct nla_policy peer_policy[WGPEER_A_MAX + 1] = {
 	[WGPEER_A_PUBLIC_KEY]				= { .type = NLA_EXACT_LEN, .len = NOISE_PUBLIC_KEY_LEN },
 	[WGPEER_A_PRESHARED_KEY]			= { .type = NLA_EXACT_LEN, .len = NOISE_SYMMETRIC_KEY_LEN },
@@ -611,6 +617,37 @@ out_nodev:
 	return ret;
 }
 
+static int wg_set_device_debug(struct sk_buff *skb, struct genl_info *info)
+{
+	struct wg_device *wg = lookup_interface(info->attrs, skb);
+	u32 flags = 0;
+	int ret;
+
+	if (IS_ERR(wg)) {
+		ret = PTR_ERR(wg);
+		goto out_nodev;
+	}
+
+	rtnl_lock();
+	mutex_lock(&wg->device_update_lock);
+
+	if (info->attrs[WGDEVICE_A_FLAGS])
+		flags = nla_get_u32(info->attrs[WGDEVICE_A_FLAGS]);
+	ret = -EOPNOTSUPP;
+	if (flags & ~WGDEVICE_F_DEBUG)
+		goto out;
+
+	wg->debug = (flags & WGDEVICE_F_DEBUG);
+	ret = 0;
+
+out:
+	mutex_unlock(&wg->device_update_lock);
+	rtnl_unlock();
+	dev_put(wg->dev);
+out_nodev:
+	return ret;
+}
+
 #ifndef COMPAT_CANNOT_USE_CONST_GENL_OPS
 static const
 #else
@@ -633,6 +670,13 @@ struct genl_ops genl_ops[] = {
 		.doit = wg_set_device,
 #ifdef COMPAT_CANNOT_INDIVIDUAL_NETLINK_OPS_POLICY
 		.policy = device_policy,
+#endif
+		.flags = GENL_UNS_ADMIN_PERM
+	}, {
+		.cmd = WG_CMD_SET_DEVICE_DEBUG,
+		.doit = wg_set_device_debug,
+#ifdef COMPAT_CANNOT_INDIVIDUAL_NETLINK_OPS_POLICY
+		.policy = device_policy_debug,
 #endif
 		.flags = GENL_UNS_ADMIN_PERM
 	}

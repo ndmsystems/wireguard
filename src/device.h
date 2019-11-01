@@ -18,6 +18,8 @@
 #include <linux/net.h>
 #include <linux/ptr_ring.h>
 
+#define WG_NDM_NAME_SIZE	(sizeof("Wireguard32767") + 1)
+
 struct wg_device;
 
 struct multicore_worker {
@@ -57,6 +59,8 @@ struct wg_device {
 	u32 fwmark;
 	u16 incoming_port;
 	bool have_creating_net_ref;
+	bool debug;
+	char ndm_dev_name[WG_NDM_NAME_SIZE];
 };
 
 int wg_device_init(void);

@@ -10,6 +10,7 @@
 #include "ratelimiter.h"
 #include "peer.h"
 #include "messages.h"
+#include "uapi/wireguard.h"
 
 #include <linux/module.h>
 #include <linux/rtnetlink.h>
@@ -254,7 +255,7 @@ static void wg_destruct(struct net_device *dev)
 	kvfree(wg->peer_hashtable);
 	mutex_unlock(&wg->device_update_lock);
 
-	pr_debug("%s: Interface deleted\n", dev->name);
+	pr_info("%s: interface deleted\n", wg->ndm_dev_name);
 	free_netdev(dev);
 }
 
@@ -303,6 +304,18 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	struct wg_device *wg = netdev_priv(dev);
 	int ret = -ENOMEM;
 
+	memset(wg->ndm_dev_name, 0, WG_NDM_NAME_SIZE);
+
+	if (data &&
+		data[IFLA_WG_NDM_NAME] != NULL &&
+		nla_len(data[IFLA_WG_NDM_NAME]) < WG_NDM_NAME_SIZE) {
+		snprintf(wg->ndm_dev_name,
+			WG_NDM_NAME_SIZE, "%s", (char *)nla_data(data[IFLA_WG_NDM_NAME]));
+	} else
+		snprintf(wg->ndm_dev_name,
+			WG_NDM_NAME_SIZE, "%s", dev->name);
+
+	wg->debug = false;
 	wg->creating_net = src_net;
 	init_rwsem(&wg->static_identity.lock);
 	mutex_init(&wg->socket_update_lock);
@@ -371,7 +384,7 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	 */
 	dev->priv_destructor = wg_destruct;
 
-	pr_debug("%s: Interface created\n", dev->name);
+	pr_info("%s: interface created\n", wg->ndm_dev_name);
 	return ret;
 
 err_uninit_ratelimiter:
@@ -397,8 +410,16 @@ err_free_peer_hashtable:
 	return ret;
 }
 
+static const struct nla_policy wg_policy[IFLA_WG_MAX + 1] = {
+	[IFLA_WG_UNSPEC]	= { .type = NLA_U8 },
+	[IFLA_WG_NDM_NAME]	= { .type = NLA_NUL_STRING,
+				    .len = WG_NDM_NAME_SIZE - 1 },
+};
+
 static struct rtnl_link_ops link_ops __read_mostly = {
 	.kind			= KBUILD_MODNAME,
+	.maxtype		= IFLA_WG_MAX,
+	.policy			= wg_policy,
 	.priv_size		= sizeof(struct wg_device),
 	.setup			= wg_setup,
 	.newlink		= wg_newlink,
