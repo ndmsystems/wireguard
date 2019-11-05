@@ -28,9 +28,15 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 		return; /* This function is rate limited. */
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
-	net_info_peer_ratelimited("%s: sending handshake initiation to peer \"%s\" (%llu) (%pISpfsc)\n",
-			    peer, peer->internal_id,
-			    &peer->endpoint.addr);
+
+	if ((!peer->device->debug &&
+		  peer->endpoint.addr.sa_family == AF_INET &&
+		 !ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) ||
+			peer->device->debug) {
+		net_info_peer_ratelimited("%s: sending handshake initiation to peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id,
+					&peer->endpoint.addr);
+	}
 
 	if (wg_noise_handshake_create_initiation(&packet, &peer->handshake)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);

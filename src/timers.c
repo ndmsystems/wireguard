@@ -44,8 +44,13 @@ static void wg_expired_retransmit_handshake(struct timer_list *timer)
 					  timer_retransmit_handshake);
 
 	if (peer->timer_handshake_attempts > MAX_TIMER_HANDSHAKES) {
-		net_info_peer_ratelimited("%s: handshake for peer \"%s\" (%llu) (%pISpfsc) did not complete after %d attempts, giving up\n",
-			 peer, peer->internal_id, &peer->endpoint.addr, MAX_TIMER_HANDSHAKES + 2);
+		if ((!peer->device->debug &&
+			  peer->endpoint.addr.sa_family == AF_INET &&
+			 !ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) ||
+				peer->device->debug) {
+			net_info_peer_ratelimited("%s: handshake for peer \"%s\" (%llu) (%pISpfsc) did not complete after %d attempts, giving up\n",
+				 peer, peer->internal_id, &peer->endpoint.addr, MAX_TIMER_HANDSHAKES + 2);
+		}
 
 		del_timer(&peer->timer_send_keepalive);
 		/* We drop all packets without a keypair and don't try again,
@@ -61,9 +66,14 @@ static void wg_expired_retransmit_handshake(struct timer_list *timer)
 				       jiffies + REJECT_AFTER_TIME * 3 * HZ);
 	} else {
 		++peer->timer_handshake_attempts;
-		net_info_peer_ratelimited("%s: handshake for peer \"%s\" (%llu) (%pISpfsc) did not complete after %d seconds, retrying (try %d)\n",
-			 peer, peer->internal_id, &peer->endpoint.addr, REKEY_TIMEOUT,
-			 peer->timer_handshake_attempts + 1);
+		if ((!peer->device->debug &&
+			  peer->endpoint.addr.sa_family == AF_INET &&
+			 !ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) ||
+				peer->device->debug) {
+			net_info_peer_ratelimited("%s: handshake for peer \"%s\" (%llu) (%pISpfsc) did not complete after %d seconds, retrying (try %d)\n",
+				 peer, peer->internal_id, &peer->endpoint.addr, REKEY_TIMEOUT,
+				 peer->timer_handshake_attempts + 1);
+		}
 
 		/* We clear the endpoint address src address, in case this is
 		 * the cause of trouble.
