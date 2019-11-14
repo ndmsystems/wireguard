@@ -423,7 +423,7 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	if (unlikely(napi_gro_receive(&peer->napi, skb) == GRO_DROP)) {
 		++dev->stats.rx_dropped;
 		if (peer->device->debug) {
-			net_info_peer_ratelimited("%s: failed to give packet to userspace from peer \"%s\" (%llu) (%pISpfsc)\n",
+			net_info_peer_ratelimited("%s: failed to receive packet from peer \"%s\" (%llu) (%pISpfsc) (possibly dropped by netfilter)\n",
 						peer, peer->internal_id,
 						&peer->endpoint.addr);
 		}
