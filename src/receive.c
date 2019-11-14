@@ -420,7 +420,7 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 	if (unlikely(routed_peer != peer))
 		goto dishonest_packet_peer;
 
-	if (unlikely(netif_receive_skb(skb) != NET_RX_SUCCESS)) {
+	if (unlikely(napi_gro_receive(&peer->napi, skb) == GRO_DROP)) {
 		++dev->stats.rx_dropped;
 		if (peer->device->debug) {
 			net_info_peer_ratelimited("%s: failed to give packet to userspace from peer \"%s\" (%llu) (%pISpfsc)\n",
