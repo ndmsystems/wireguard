@@ -175,9 +175,11 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 			return;
 		}
 		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_info_peer_ratelimited("%s: receiving handshake response from peer \"%s\" (%llu) (%pISpfsc)\n",
+		if (wg->debug) {
+			net_info_peer_ratelimited("%s: receiving handshake response from peer \"%s\" (%llu) (%pISpfsc)\n",
 				    peer, peer->internal_id,
 				    &peer->endpoint.addr);
+		}
 		if (wg_noise_handshake_begin_session(&peer->handshake,
 						     &peer->keypairs)) {
 			wg_timers_session_derived(peer);

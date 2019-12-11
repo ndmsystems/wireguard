@@ -29,10 +29,9 @@ static void wg_packet_send_handshake_initiation(struct wg_peer *peer)
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
 
-	if ((!peer->device->debug &&
-		  peer->endpoint.addr.sa_family == AF_INET &&
-		 !ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) ||
-			peer->device->debug) {
+	if ( peer->device->debug &&
+		 peer->endpoint.addr.sa_family == AF_INET &&
+		!ipv4_is_zeronet(peer->endpoint.addr4.sin_addr.s_addr)) {
 		net_info_peer_ratelimited("%s: sending handshake initiation to peer \"%s\" (%llu) (%pISpfsc)\n",
 					peer, peer->internal_id,
 					&peer->endpoint.addr);
