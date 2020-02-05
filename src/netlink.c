@@ -459,6 +459,12 @@ static int set_peer(struct wg_device *wg, struct nlattr **attrs)
 
 			memcpy(&endpoint.addr, addr, len);
 			wg_socket_set_peer_endpoint(peer, &endpoint);
+
+			if (wg->debug)
+				net_info_peer_ratelimited("%s: flushing endpoint cache for peer \"%s\"\n",
+						peer);
+
+			dst_cache_reset(&peer->endpoint_cache);
 		}
 	}
 
