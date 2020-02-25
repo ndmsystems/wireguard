@@ -17,6 +17,10 @@
 #include <linux/udp.h>
 #include <net/ip_tunnels.h>
 
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+#include <../ndm/hw_nat/ra_nat.h>
+#endif
+
 /* Must be called with bh disabled. */
 static void update_rx_stats(struct wg_peer *peer, size_t len)
 {
@@ -421,6 +425,10 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 
 	if (unlikely(routed_peer != peer))
 		goto dishonest_packet_peer;
+
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+	FOE_ALG_SKIP(skb);
+#endif
 
 	if (unlikely(napi_gro_receive(&peer->napi, skb) == GRO_DROP)) {
 		++dev->stats.rx_dropped;

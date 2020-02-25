@@ -25,6 +25,13 @@
 #include <net/ip_tunnels.h>
 #include <net/addrconf.h>
 
+#if IS_ENABLED(CONFIG_FAST_NAT)
+#include <net/fast_vpn.h>
+#endif
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+#include <../ndm/hw_nat/ra_nat.h>
+#endif
+
 static LIST_HEAD(device_list);
 
 static int wg_open(struct net_device *dev)
@@ -156,6 +163,14 @@ static netdev_tx_t wg_xmit(struct sk_buff *skb, struct net_device *dev)
 				    dev->name, peer->internal_id);
 		goto err_peer;
 	}
+
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+	FOE_AI_UNHIT(skb);
+#endif
+
+#if IS_ENABLED(CONFIG_FAST_NAT)
+	SWNAT_RESET_MARKS(skb);
+#endif
 
 	mtu = skb_dst(skb) ? dst_mtu(skb_dst(skb)) : dev->mtu;
 
