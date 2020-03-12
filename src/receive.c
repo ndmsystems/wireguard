@@ -142,6 +142,7 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 
 	switch (SKB_TYPE_LE32(skb)) {
 	case cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION): {
+		struct timespec64 ts, last_handshake_ts;
 		struct message_handshake_initiation *message =
 			(struct message_handshake_initiation *)skb->data;
 
@@ -157,9 +158,16 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 			return;
 		}
 		wg_socket_set_peer_endpoint_from_skb(peer, skb);
-		net_info_peer_ratelimited("%s: receiving handshake initiation from peer \"%s\" (%llu) (%pISpfsc)\n",
-				    peer, peer->internal_id,
-				    &peer->endpoint.addr);
+
+		last_handshake_ts = peer->walltime_last_handshake;
+		timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+		ktime_get_real_ts64(&ts);
+
+		if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+			net_info_peer_ratelimited("%s: receiving handshake initiation from peer \"%s\" (%llu) (%pISpfsc)\n",
+						peer, peer->internal_id,
+						&peer->endpoint.addr);
+
 		wg_packet_send_handshake_response(peer);
 		break;
 	}

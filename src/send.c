@@ -91,11 +91,18 @@ out:
 void wg_packet_send_handshake_response(struct wg_peer *peer)
 {
 	struct message_handshake_response packet;
+	struct timespec64 ts, last_handshake_ts;
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
-	net_info_peer_ratelimited("%s: sending handshake response to peer \"%s\" (%llu) (%pISpfsc)\n",
-			    peer, peer->internal_id,
-			    &peer->endpoint.addr);
+
+	last_handshake_ts = peer->walltime_last_handshake;
+	timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+	ktime_get_real_ts64(&ts);
+
+	if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+		net_info_peer_ratelimited("%s: sending handshake response to peer \"%s\" (%llu) (%pISpfsc)\n",
+					peer, peer->internal_id,
+					&peer->endpoint.addr);
 
 	if (wg_noise_handshake_create_response(&packet, &peer->handshake)) {
 		wg_cookie_add_mac_to_packet(&packet, sizeof(packet), peer);
