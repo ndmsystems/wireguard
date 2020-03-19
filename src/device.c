@@ -283,7 +283,8 @@ static void wg_setup(struct net_device *dev)
 				    NETIF_F_SG | NETIF_F_GSO |
 				    NETIF_F_GSO_SOFTWARE | NETIF_F_HIGHDMA };
 	const int overhead = MESSAGE_MINIMUM_LENGTH + sizeof(struct udphdr) +
-			     max(sizeof(struct ipv6hdr), sizeof(struct iphdr));
+			     max(sizeof(struct ipv6hdr), sizeof(struct iphdr)) +
+			     96; /* possible pptp or ipsec overhead */
 
 	dev->netdev_ops = &netdev_ops;
 	dev->hard_header_len = 0;
