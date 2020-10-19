@@ -8,7 +8,7 @@
 
 #include "messages.h"
 
-#include <linux/hashtable.h>
+#include "compat/hashtable.h"
 #include <linux/mutex.h>
 #include <linux/siphash.h>
 

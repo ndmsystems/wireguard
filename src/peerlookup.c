@@ -57,7 +57,7 @@ wg_pubkey_hashtable_lookup(struct pubkey_hashtable *table,
 	struct wg_peer *iter_peer, *peer = NULL;
 
 	rcu_read_lock_bh();
-	hlist_for_each_entry_rcu_bh(iter_peer, pubkey_bucket(table, pubkey),
+	hlist_for_each_entry_rcu_bh_(iter_peer, pubkey_bucket(table, pubkey),
 				    pubkey_hash) {
 		if (!memcmp(pubkey, iter_peer->handshake.remote_static,
 			    NOISE_PUBLIC_KEY_LEN)) {
@@ -130,7 +130,7 @@ __le32 wg_index_hashtable_insert(struct index_hashtable *table,
 search_unused_slot:
 	/* First we try to find an unused slot, randomly, while unlocked. */
 	entry->index = (__force __le32)get_random_u32();
-	hlist_for_each_entry_rcu_bh(existing_entry,
+	hlist_for_each_entry_rcu_bh_(existing_entry,
 				    index_bucket(table, entry->index),
 				    index_hash) {
 		if (existing_entry->index == entry->index)
@@ -142,7 +142,7 @@ search_unused_slot:
 	 * that nobody else stole it from us.
 	 */
 	spin_lock_bh(&table->lock);
-	hlist_for_each_entry_rcu_bh(existing_entry,
+	hlist_for_each_entry_rcu_bh_(existing_entry,
 				    index_bucket(table, entry->index),
 				    index_hash) {
 		if (existing_entry->index == entry->index) {
@@ -201,7 +201,7 @@ wg_index_hashtable_lookup(struct index_hashtable *table,
 	struct index_hashtable_entry *iter_entry, *entry = NULL;
 
 	rcu_read_lock_bh();
-	hlist_for_each_entry_rcu_bh(iter_entry, index_bucket(table, index),
+	hlist_for_each_entry_rcu_bh_(iter_entry, index_bucket(table, index),
 				    index_hash) {
 		if (iter_entry->index == index) {
 			if (likely(iter_entry->type & type_mask))

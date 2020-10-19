@@ -90,6 +90,7 @@ bool chacha20poly1305_encrypt_sg_inplace(struct scatterlist *src,
 		u8 mac[POLY1305_MAC_SIZE];
 		__le64 lens[2];
 	} b __aligned(16) = { { 0 } };
+	unsigned int flags = 0;
 
 	if (WARN_ON(src_len > INT_MAX))
 		return false;
@@ -103,7 +104,11 @@ bool chacha20poly1305_encrypt_sg_inplace(struct scatterlist *src,
 	poly1305_update(&poly1305_state, pad0, (0x10 - ad_len) & 0xf,
 			simd_context);
 
-	sg_miter_start(&miter, src, sg_nents(src), SG_MITER_TO_SG | SG_MITER_ATOMIC);
+	if (irqs_disabled())
+		flags |= SG_MITER_ATOMIC;
+
+	sg_miter_start(&miter, src, sg_nents(src), SG_MITER_TO_SG | flags);
+
 	for (sl = src_len; sl > 0 && sg_miter_next(&miter); sl -= miter.length) {
 		u8 *addr = miter.addr;
 		size_t length = min_t(size_t, sl, miter.length);
@@ -251,6 +256,7 @@ bool chacha20poly1305_decrypt_sg_inplace(struct scatterlist *src,
 		__le64 lens[2];
 	} b __aligned(16) = { { 0 } };
 	bool ret = false;
+	unsigned int flags = 0;
 
 	if (unlikely(src_len < POLY1305_MAC_SIZE || WARN_ON(src_len > INT_MAX)))
 		return ret;
@@ -265,7 +271,11 @@ bool chacha20poly1305_decrypt_sg_inplace(struct scatterlist *src,
 	poly1305_update(&poly1305_state, pad0, (0x10 - ad_len) & 0xf,
 			simd_context);
 
-	sg_miter_start(&miter, src, sg_nents(src), SG_MITER_TO_SG | SG_MITER_ATOMIC);
+	if (irqs_disabled())
+		flags |= SG_MITER_ATOMIC;
+
+	sg_miter_start(&miter, src, sg_nents(src), SG_MITER_TO_SG | flags);
+
 	for (sl = src_len; sl > 0 && sg_miter_next(&miter); sl -= miter.length) {
 		u8 *addr = miter.addr;
 		size_t length = min_t(size_t, sl, miter.length);

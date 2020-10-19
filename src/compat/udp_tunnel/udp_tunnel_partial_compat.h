@@ -17,7 +17,6 @@
 #include <net/ipv6.h>
 #include <net/addrconf.h>
 #include <net/ip6_checksum.h>
-#include <net/ip6_tunnel.h>
 #endif
 static inline void __compat_fake_destructor(struct sk_buff *skb)
 {
@@ -71,6 +70,25 @@ static inline int udp_tunnel_xmit_skb(struct socket *sock, struct rtable *rt,
 			     tos, ttl, df, xnet);
 }
 #if IS_ENABLED(CONFIG_IPV6)
+static inline void ip6tunnel_xmit__(struct sk_buff *skb, struct net_device *dev)
+{
+	struct net_device_stats *stats = &dev->stats;
+	int pkt_len, err;
+
+	nf_reset(skb);
+	memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
+	pkt_len = skb->len;
+	err = ip6_local_out(skb);
+
+	if (net_xmit_eval(err) == 0) {
+		dev->stats.tx_bytes += pkt_len;
+		dev->stats.tx_packets++;
+	} else {
+		stats->tx_errors++;
+		stats->tx_aborted_errors++;
+	}
+}
+
 static inline int udp_tunnel6_xmit_skb(struct socket *sock, struct dst_entry *dst,
                          struct sk_buff *skb, struct net_device *dev,
                          struct in6_addr *saddr, struct in6_addr *daddr,
@@ -101,7 +119,7 @@ static inline int udp_tunnel6_xmit_skb(struct socket *sock, struct dst_entry *ds
 	ip6h->hop_limit   = ttl;
 	ip6h->daddr	  = *daddr;
 	ip6h->saddr	  = *saddr;
-	ip6tunnel_xmit(skb, dev);
+	ip6tunnel_xmit__(skb, dev);
 	return 0;
 }
 #endif

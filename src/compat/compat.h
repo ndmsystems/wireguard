@@ -35,9 +35,35 @@
 #endif
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
-#error "WireGuard requires Linux >= 3.10"
-#endif
+#define prandom_u32 random32
+
+#include <linux/skbuff.h>
+
+static inline bool skb_transport_header_was_set(const struct sk_buff *skb)
+{
+	return skb->transport_header != NULL;
+}
+
+static inline void skb_probe_transport_header(struct sk_buff *skb,
+					      const int offset_hint)
+{
+	if (skb_transport_header_was_set(skb))
+		return;
+	else
+		skb_set_transport_header(skb, offset_hint);
+}
+
+static inline void skb_reset_inner_headers(struct sk_buff *skb)
+{
+}
+
+static inline int sg_nents(struct scatterlist *sg)
+{
+	int nents;
+	for (nents = 0; sg; sg = sg_next(sg))
+		nents++;
+	return nents;
+}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 #error "WireGuard has been merged into Linux >= 5.6 and therefore this compatibility module is no longer required."
@@ -142,7 +168,7 @@ static inline u32 __compat_get_random_u32(void)
 #else
 	get_random_once(&key, sizeof(key));
 #endif
-	return siphash_2u32(counter++, get_random_int(), &key);
+	return siphash_2u32(counter++, prandom_u32(), &key);
 }
 #define get_random_u32 __compat_get_random_u32
 #endif
@@ -266,14 +292,6 @@ static inline u32 __compat_prandom_u32_max(u32 ep_ro)
 #ifndef S64_MIN
 #define S64_MIN ((s64)(-S64_MAX - 1))
 #endif
-#endif
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 3) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 16, 35) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 24) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && !defined(ISUBUNTU1404)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 33) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 60) && !defined(ISRHEL7))
-static inline void memzero_explicit(void *s, size_t count)
-{
-	memset(s, 0, count);
-	barrier();
-}
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0) && !defined(ISRHEL7)

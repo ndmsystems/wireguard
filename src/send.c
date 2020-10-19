@@ -15,7 +15,6 @@
 #include <linux/uio.h>
 #include <linux/inetdevice.h>
 #include <linux/socket.h>
-#include <net/ip_tunnels.h>
 #include <net/udp.h>
 #include <net/sock.h>
 
@@ -91,15 +90,15 @@ out:
 void wg_packet_send_handshake_response(struct wg_peer *peer)
 {
 	struct message_handshake_response packet;
-	struct timespec64 ts, last_handshake_ts;
+	struct timespec ts, last_handshake_ts;
 
 	atomic64_set(&peer->last_sent_handshake, ktime_get_coarse_boottime_ns());
 
 	last_handshake_ts = peer->walltime_last_handshake;
-	timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
-	ktime_get_real_ts64(&ts);
+	timespec_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+	ktime_get_real_ts(&ts);
 
-	if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+	if (timespec_compare(&ts, &last_handshake_ts) > 0)
 		net_info_peer_ratelimited("%s: sending handshake response to peer \"%s\" (%llu) (%pISpfsc)\n",
 					peer, peer->internal_id,
 					&peer->endpoint.addr);
@@ -215,7 +214,6 @@ static bool encrypt_packet(struct sk_buff *skb, struct noise_keypair *keypair,
 	/* Only after checksumming can we safely add on the padding at the end
 	 * and the header.
 	 */
-	skb_set_inner_network_header(skb, 0);
 	header = (struct message_data *)skb_push(skb, sizeof(*header));
 	header->header.type = cpu_to_le32(MESSAGE_DATA);
 	header->key_idx = keypair->remote_index;
@@ -404,7 +402,6 @@ void wg_packet_send_staged_packets(struct wg_peer *peer)
 		/* 0 for no outer TOS: no leak. TODO: at some later point, we
 		 * might consider using flowi->tos as outer instead.
 		 */
-		PACKET_CB(skb)->ds = ip_tunnel_ecn_encap(0, ip_hdr(skb), skb);
 		PACKET_CB(skb)->nonce =
 				atomic64_inc_return(&keypair->sending_counter) - 1;
 		if (unlikely(PACKET_CB(skb)->nonce >= REJECT_AFTER_MESSAGES))

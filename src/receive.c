@@ -15,7 +15,6 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/udp.h>
-#include <net/ip_tunnels.h>
 
 #if IS_ENABLED(CONFIG_RA_HW_NAT)
 #include <../ndm/hw_nat/ra_nat.h>
@@ -24,15 +23,9 @@
 /* Must be called with bh disabled. */
 static void update_rx_stats(struct wg_peer *peer, size_t len)
 {
-	struct pcpu_sw_netstats *tstats =
-		get_cpu_ptr(peer->device->dev->tstats);
-
-	u64_stats_update_begin(&tstats->syncp);
-	++tstats->rx_packets;
-	tstats->rx_bytes += len;
+	peer->device->dev->stats.rx_packets++;
+	peer->device->dev->stats.rx_bytes += len;
 	peer->rx_bytes += len;
-	u64_stats_update_end(&tstats->syncp);
-	put_cpu_ptr(tstats);
 }
 
 #define SKB_TYPE_LE32(skb) (((struct message_header *)(skb)->data)->type)
@@ -145,7 +138,7 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 
 	switch (SKB_TYPE_LE32(skb)) {
 	case cpu_to_le32(MESSAGE_HANDSHAKE_INITIATION): {
-		struct timespec64 ts, last_handshake_ts;
+		struct timespec ts, last_handshake_ts;
 		struct message_handshake_initiation *message =
 			(struct message_handshake_initiation *)skb->data;
 
@@ -163,10 +156,10 @@ static void wg_receive_handshake_packet(struct wg_device *wg,
 		wg_socket_set_peer_endpoint_from_skb(peer, skb);
 
 		last_handshake_ts = peer->walltime_last_handshake;
-		timespec64_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
-		ktime_get_real_ts64(&ts);
+		timespec_add_ns(&last_handshake_ts, (u64)REJECT_AFTER_TIME * NSEC_PER_SEC);
+		ktime_get_real_ts(&ts);
 
-		if (timespec64_compare(&ts, &last_handshake_ts) > 0)
+		if (timespec_compare(&ts, &last_handshake_ts) > 0)
 			net_info_peer_ratelimited("%s: receiving handshake initiation from peer \"%s\" (%llu) (%pISpfsc)\n",
 						peer, peer->internal_id,
 						&peer->endpoint.addr);
@@ -413,11 +406,9 @@ static void wg_packet_consume_data_done(struct wg_peer *peer,
 		len = ntohs(ip_hdr(skb)->tot_len);
 		if (unlikely(len < sizeof(struct iphdr)))
 			goto dishonest_packet_size;
-		INET_ECN_decapsulate(skb, PACKET_CB(skb)->ds, ip_hdr(skb)->tos);
 	} else if (skb->protocol == htons(ETH_P_IPV6)) {
 		len = ntohs(ipv6_hdr(skb)->payload_len) +
 		      sizeof(struct ipv6hdr);
-		INET_ECN_decapsulate(skb, PACKET_CB(skb)->ds, ipv6_get_dsfield(ipv6_hdr(skb)));
 	} else {
 		goto dishonest_packet_type;
 	}
@@ -621,7 +612,6 @@ void wg_packet_receive(struct wg_device *wg, struct sk_buff *skb)
 		break;
 	}
 	case cpu_to_le32(MESSAGE_DATA):
-		PACKET_CB(skb)->ds = ip_tunnel_get_dsfield(ip_hdr(skb), skb);
 		wg_packet_consume_data(wg, skb);
 		break;
 	default:

@@ -1,7 +1,6 @@
 #ifndef _WG_NET_UDP_TUNNEL_H
 #define _WG_NET_UDP_TUNNEL_H
 
-#include <net/ip_tunnels.h>
 #include <net/udp.h>
 
 #if IS_ENABLED(CONFIG_IPV6)

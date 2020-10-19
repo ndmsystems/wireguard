@@ -136,12 +136,28 @@ static void __compat_fake_destructor(struct sk_buff *skb)
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0)
+static inline void compat_iptunnel_xmit_(struct sk_buff *skb, struct net_device *dev)
+{
+	int err;
+	int pkt_len = skb->len - skb_transport_offset(skb);
+
+	nf_reset(skb);
+
+	err = ip_local_out(skb);
+	if (likely(net_xmit_eval(err) == 0)) {
+		dev->stats.tx_bytes += pkt_len;
+		dev->stats.tx_packets++;
+	} else {
+		dev->stats.tx_errors++;
+		dev->stats.tx_aborted_errors++;
+	}
+}
+
 static void __compat_iptunnel_xmit(struct rtable *rt, struct sk_buff *skb,
 		  __be32 src, __be32 dst, __u8 proto,
 		  __u8 tos, __u8 ttl, __be16 df, bool xnet)
 {
 	struct iphdr *iph;
-	struct pcpu_tstats *tstats = this_cpu_ptr(skb->dev->tstats);
 
 	skb_scrub_packet(skb, xnet);
 
@@ -163,16 +179,12 @@ static void __compat_iptunnel_xmit(struct rtable *rt, struct sk_buff *skb,
 	iph->daddr	=	dst;
 	iph->saddr	=	src;
 	iph->ttl	=	ttl;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 53)
-	__ip_select_ident(iph, &rt->dst, (skb_shinfo(skb)->gso_segs ?: 1) - 1);
-#else
-	__ip_select_ident(iph, skb_shinfo(skb)->gso_segs ?: 1);
-#endif
 
-	iptunnel_xmit(skb, skb->dev);
-	u64_stats_update_begin(&tstats->syncp);
-	tstats->tx_bytes -= 8;
-	u64_stats_update_end(&tstats->syncp);
+	__ip_select_ident(iph, skb_shinfo(skb)->gso_segs ?: 1);
+
+	compat_iptunnel_xmit_(skb, skb->dev);
+
+	skb->dev->stats.tx_bytes -= 8;
 }
 #define iptunnel_xmit __compat_iptunnel_xmit
 #endif
@@ -244,7 +256,6 @@ void udp_tunnel_sock_release(struct socket *sock)
 #include <net/udp_tunnel.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
-#include <net/ip6_tunnel.h>
 #include <net/ip6_checksum.h>
 
 int udp_sock_create6(struct net *net, struct udp_port_cfg *cfg,
@@ -350,6 +361,25 @@ static void udp6_set_csum(bool nocheck, struct sk_buff *skb,
 }
 #endif
 
+static inline void ip6tunnel_xmit__(struct sk_buff *skb, struct net_device *dev)
+{
+	struct net_device_stats *stats = &dev->stats;
+	int pkt_len, err;
+
+	nf_reset(skb);
+	memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
+	pkt_len = skb->len;
+	err = ip6_local_out(skb);
+
+	if (net_xmit_eval(err) == 0) {
+		dev->stats.tx_bytes += pkt_len;
+		dev->stats.tx_packets++;
+	} else {
+		stats->tx_errors++;
+		stats->tx_aborted_errors++;
+	}
+}
+
 int udp_tunnel6_xmit_skb(struct dst_entry *dst, struct sock *sk,
 			 struct sk_buff *skb,
 			 struct net_device *dev, struct in6_addr *saddr,
@@ -376,7 +406,6 @@ int udp_tunnel6_xmit_skb(struct dst_entry *dst, struct sock *sk,
 	__skb_push(skb, sizeof(*ip6h));
 	skb_reset_network_header(skb);
 	ip6h		  = ipv6_hdr(skb);
-	ip6_flow_hdr(ip6h, prio, label);
 	ip6h->payload_len = htons(skb->len);
 	ip6h->nexthdr     = IPPROTO_UDP;
 	ip6h->hop_limit   = ttl;
@@ -388,7 +417,7 @@ int udp_tunnel6_xmit_skb(struct dst_entry *dst, struct sock *sk,
 	if (!skb->destructor)
 		skb->destructor = __compat_fake_destructor;
 
-	ip6tunnel_xmit(skb, dev);
+	ip6tunnel_xmit__(skb, dev);
 	return 0;
 }
 #endif

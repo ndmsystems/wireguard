@@ -22,7 +22,6 @@
 #include <linux/suspend.h>
 #include <net/icmp.h>
 #include <net/rtnetlink.h>
-#include <net/ip_tunnels.h>
 #include <net/addrconf.h>
 
 #if IS_ENABLED(CONFIG_FAST_NAT)
@@ -170,7 +169,7 @@ static netdev_tx_t wg_xmit(struct sk_buff *skb, struct net_device *dev)
 #endif
 
 #if IS_ENABLED(CONFIG_FAST_NAT)
-	SWNAT_RESET_MARKS(skb);
+	SWNAT_KA_RESET_MARK(skb);
 #endif
 
 	mtu = skb_dst(skb) ? dst_mtu(skb_dst(skb)) : dev->mtu;
@@ -239,7 +238,6 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_open		= wg_open,
 	.ndo_stop		= wg_stop,
 	.ndo_start_xmit		= wg_xmit,
-	.ndo_get_stats64	= ip_tunnel_get_stats64
 };
 
 static void wg_destruct(struct net_device *dev)
@@ -301,7 +299,6 @@ static void wg_setup(struct net_device *dev)
 	dev->features |= NETIF_F_LLTX;
 	dev->features |= WG_NETDEV_FEATURES;
 	dev->hw_features |= WG_NETDEV_FEATURES;
-	dev->hw_enc_features |= WG_NETDEV_FEATURES;
 	dev->mtu = ETH_DATA_LEN - overhead;
 #ifndef COMPAT_CANNOT_USE_MAX_MTU
 	dev->max_mtu = round_down(INT_MAX, MESSAGE_PADDING_MULTIPLE) - overhead;
@@ -355,10 +352,6 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	wg->index_hashtable = wg_index_hashtable_alloc();
 	if (!wg->index_hashtable)
 		goto err_free_peer_hashtable;
-
-	dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
-	if (!dev->tstats)
-		goto err_free_index_hashtable;
 
 	wg->incoming_handshakes_worker =
 		wg_packet_percpu_multicore_worker_alloc(
@@ -425,7 +418,6 @@ err_free_incoming_handshakes:
 	free_percpu(wg->incoming_handshakes_worker);
 err_free_tstats:
 	free_percpu(dev->tstats);
-err_free_index_hashtable:
 	kvfree(wg->index_hashtable);
 err_free_peer_hashtable:
 	kvfree(wg->peer_hashtable);

@@ -150,7 +150,7 @@ static int send6(struct wg_device *wg, struct sk_buff *skb,
 
 	skb->ignore_df = 1;
 	udp_tunnel6_xmit_skb(dst, sock, skb, skb->dev, &fl.saddr, &fl.daddr, ds,
-			     ip6_dst_hoplimit(dst), 0, fl.fl6_sport,
+			     128, 0, fl.fl6_sport,
 			     fl.fl6_dport, false);
 	goto out;
 
@@ -194,7 +194,6 @@ int wg_socket_send_buffer_to_peer(struct wg_peer *peer, void *buffer,
 		return -ENOMEM;
 
 	skb_reserve(skb, SKB_HEADER_LEN);
-	skb_set_inner_network_header(skb, 0);
 	skb_put_data(skb, buffer, len);
 	return wg_socket_send_skb_to_peer(peer, skb, ds);
 }
@@ -217,7 +216,6 @@ int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 	if (unlikely(!skb))
 		return -ENOMEM;
 	skb_reserve(skb, SKB_HEADER_LEN);
-	skb_set_inner_network_header(skb, 0);
 	skb_put_data(skb, buffer, len);
 
 	if (endpoint.addr.sa_family == AF_INET)
@@ -245,8 +243,6 @@ int wg_socket_endpoint_from_skb(struct endpoint *endpoint,
 		endpoint->addr6.sin6_family = AF_INET6;
 		endpoint->addr6.sin6_port = udp_hdr(skb)->source;
 		endpoint->addr6.sin6_addr = ipv6_hdr(skb)->saddr;
-		endpoint->addr6.sin6_scope_id = ipv6_iface_scope_id(
-			&ipv6_hdr(skb)->saddr, skb->skb_iif);
 		endpoint->src6 = ipv6_hdr(skb)->daddr;
 	} else {
 		return -EINVAL;
@@ -334,7 +330,6 @@ static void sock_free(struct sock *sock)
 {
 	if (unlikely(!sock))
 		return;
-	sk_clear_memalloc(sock);
 	udp_tunnel_sock_release(sock->sk_socket);
 }
 
@@ -342,7 +337,6 @@ static void set_sock_opts(struct socket *sock)
 {
 	sock->sk->sk_allocation = GFP_ATOMIC;
 	sock->sk->sk_sndbuf = INT_MAX;
-	sk_set_memalloc(sock->sk);
 }
 
 int wg_socket_init(struct wg_device *wg, u16 port)
