@@ -182,9 +182,10 @@ static void __compat_iptunnel_xmit(struct rtable *rt, struct sk_buff *skb,
 
 	__ip_select_ident(iph, skb_shinfo(skb)->gso_segs ?: 1);
 
-	compat_iptunnel_xmit_(skb, skb->dev);
+	if (skb->dev != NULL)
+		skb->dev->stats.tx_bytes -= 8;
 
-	skb->dev->stats.tx_bytes -= 8;
+	compat_iptunnel_xmit_(skb, skb->dev);
 }
 #define iptunnel_xmit __compat_iptunnel_xmit
 #endif
